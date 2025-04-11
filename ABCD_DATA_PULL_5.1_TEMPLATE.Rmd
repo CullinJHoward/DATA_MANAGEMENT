@@ -1,0 +1,588 @@
+---
+title: "ABCD_DATA_PULL_5.1"
+author: "Cullin J Howard"
+date: "2025-04-11"
+output: html_document
+---
+
+## ENVIRONMENT PREP REQUIRES MANUAL CODING - ESPECIALLY FOR DIRECTORIES
+```{R, PREP ENVIRONMENT}
+
+## LIBRARY PACKAGES 
+library(dplyr)
+library(tidyverse)
+library(fauxnaif)
+library(summarytools)
+library(psych)
+library(DescTools)
+library(purrr)
+
+##################### IDENTIFY DIRETORIES
+
+### REQUESTORS DIRECTORY 
+
+# THIS IS THE LOCATION IN OUR SHARED ONEDRIVE FOLDERWHERE THEIR DATA REQUEST
+# AND DOCUMENTS ARE STORED 
+
+setwd("C:\\Users\\cjh37695\\OneDrive - University of Georgia\\YDI-Shared\\DATA_MANAGEMENT\\DATA_REQUESTS\\KATIE\\UPREDICTABILITY\\")
+
+### LOAD DATA REQUEST FORM
+
+REQUEST <- read.csv("KH_VAR_REQUEST.csv")
+
+### INDICATE THE PATH TO OUR SAVED ABCD DATA (PASSWORD-PROTECTED LOCATION)
+
+ABCD_DIRECTORY <- "D:\\ABCD 5.0\\abcd 5.0\\core\\"
+
+
+##################### IDENTIFY ALL THE REQUESTED VARIABLES 
+
+### LOAD IN ALL THE CSV TABLES HOLDING THE REQUESTED VARIABLES 
+
+csv_files <- paste0(unique(REQUEST$Tables), ".csv") 
+
+### ADD EXTRA TABLES TO THE LIST THAT HAVE DEMOGRAPHICS/DEFAULT DATA
+
+csv_files <- unique(c(csv_files, "abcd_y_lt.csv", "abcd_p_demo.csv", "abcd_y_lf.csv"))
+
+
+### LIST THE REQUESTED VARIABLES & ADD IN THE DEFAULT DEMOGRAPHIC VARIABLES
+
+ABCD_VARS <- unique(c(
+  "src_subject_id", "eventname", 
+  "site_id_l", "latent_factor_ss_general_ses",
+  "latent_factor_ss_social", "latent_factor_ss_perinatal", 
+  "acs_raked_propensity_score", "race_ethnicity",
+  "demo_prnt_marital_v2", "demo_prnt_ed_v2",
+  "demo_prtnr_ed_v2", "demo_comb_income_v2",
+  "rel_family_id", "interview_age",
+  REQUEST$Variable.Name
+))
+
+
+##################### NEUROIMAGING-SPECIFIC ADDITIONS 
+
+### IF "mri_" IS A PREFIX TO ANY TABLE, THEN ADD IN MOTION/QC TABLES TO THE LIST
+
+if (any(grepl("^mri_", csv_files))) {
+  # Add mri_y_qc_incl.csv and mri_y_qc_motion.csv to csv_files if present
+  csv_files <- c(csv_files, "mri_y_qc_incl.csv", "mri_y_qc_motion.csv", "mri_y_adm_info.csv")
+}
+
+### BASED ON IMAGING MODALITY (BY VARIABLE SUFFIX), 
+### ADD IN NECESSARY QC AND MOTION VARIABLES 
+
+#Resting state QC
+if (any(grepl("^rsfmri_", ABCD_VARS))) {
+  # Add imgincl_rsfmri_include and rsfmri_meanmotion to ABCD_VARS if present
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_rsfmri_include", "rsfmri_meanmotion", "mri_info_deviceserialnumber")
+}
+
+#dMRI (DTI or RSI)
+if (any(grepl("^mri_y_dti_|^mri_y_rsi_", csv_files))) {
+  # Add imgincl_dmri_include and dmri_meanmotion to ABCD_VARS if present
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_dmri_include", "dmri_meanmotion", "mri_info_deviceserialnumber")
+}
+
+#Functional Task - MID 
+if (any(grepl("^mri_y_tfmr_mid_", csv_files))) {
+  # Add imgincl_mid_include and tfmri_mid_all_meanmotion to ABCD_VARS if present
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_mid_include", "tfmri_mid_all_meanmotion", "mri_info_deviceserialnumber")
+}
+
+#Functional Task - NBACK 
+if (any(grepl("^mri_y_tfmr_nback_", csv_files))) {
+  # Add imgincl_nback_include and tfmri_sst_all_meanmotion to ABCD_VARS if present
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_nback_include", "tfmri_nback_all_meanmotion", "mri_info_deviceserialnumber")
+}
+
+#Functional Task - SST 
+if (any(grepl("^mri_y_tfmr_sst_", csv_files))) {
+  # Add imgincl_sst_include and tfmri_nback_all_meanmotion to ABCD_VARS if present
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_sst_include", "tfmri_sst_all_meanmotion", "mri_info_deviceserialnumber")
+}
+
+#Structural - T1 weighted
+
+if (any(grepl("^mri_y_smr_t1_", csv_files))) {
+  # Add imgincl_t1w_include 
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_t1w_include", "mri_info_deviceserialnumber")
+}
+
+#Structural - T2 weighted
+
+if (any(grepl("^mri_y_smr_t2_", csv_files))) {
+  # Add imgincl_t2w_include 
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_t2w_include", "mri_info_deviceserialnumber")
+}
+
+
+##################### PREP RENAMING INDEX (G-CDS DATA NAMING DICTIONARY)
+
+NAME_DIC <- read.csv("C:\\Users\\cjh37695\\OneDrive - University of Georgia\\YDI-Shared\\DATA_MANAGEMENT\\DATA_REQUESTS\\G-CDS_ABCD.VARIABLE.NAME_DICTIONARY.csv")
+
+
+#### FIND MISSING VARIABLES FROM REQUEST TO DICTIONARY ####
+
+###  ENSURE ALL REQUESTED VARIABLES EXIST IN G-CDS DATA DICTIONARY 
+
+not_found <- setdiff(REQUEST$Variable.Name, NAME_DIC$OG_NAME)
+
+###  PRINT NOT FOUND VARIABLES
+
+if (length(not_found) > 0) {
+  cat("The following variable names are not found in df2$OG_NAME:\n")
+  print(not_found)
+} else {
+  cat("All variable names in df1$Variable.Name are found in df2$OG_NAME.\n")
+}
+
+```
+
+```{R, FILTER, PULL, AND COMBINE VARIABLES}
+
+#####################  RECURSIVELY SEARCH THE FILE STRUCTURE FOR NEEDED TABLES 
+
+### CREATE SEARCHING FUNCTION 
+
+find_csv <- function(directory, file_list) {
+  # Get list of files and directories in current directory
+  files <- list.files(path = directory, full.names = TRUE)
+  
+  # Filter out directories
+  files <- files[!file.info(files)$isdir]
+  
+  # Iterate over files
+  for (file in files) {
+    # Check if the file is in the list of CSV files
+    if (basename(file) %in% file_list) {
+      # Load CSV file into a data frame
+      df_name <- tools::file_path_sans_ext(basename(file))
+      assign(df_name, read.csv(file), envir = .GlobalEnv)
+      cat("Loaded", df_name, "from", file, "\n")
+      # Remove the found file from the list
+      file_list <- file_list[file_list != basename(file)]
+    }
+  }
+  
+  # Get list of directories in current directory
+  directories <- list.dirs(path = directory, full.names = TRUE, recursive = FALSE)
+  
+  # Recursively search subdirectories
+  for (subdir in directories) {
+    find_csv(subdir, file_list)
+  }
+}
+
+
+# APPLY THE SEARCHING FUNCTION 
+
+find_csv(ABCD_DIRECTORY, csv_files)
+
+
+
+#####################  MERGE DATA CSVs TOGETHER & REFINE TO WANTED VARS
+
+
+#### List all data frames in the environment
+DFs <- Filter(is.data.frame, mget(ls()))
+
+#### Exclude the "REQUEST" and "NAME_DIC" data frames if they exist
+DFs <- DFs[!names(DFs) %in% c("REQUEST", "NAME_DIC")]
+
+#### MERGE THEM TO A FULL DF 
+MERGED_ALLTIME_ALLVAR <- Reduce(function(x, y) 
+  merge(x, y, by = c("src_subject_id", "eventname"), 
+        all = TRUE, suffixes = c("", "")), DFs)
+
+
+#### ENSURE WE FOUND ALL REQUESTED VARIABLES
+
+non_existing <- setdiff(ABCD_VARS, colnames(MERGED_ALLTIME_ALLVAR))
+
+if (length(non_existing) == 0) {
+  cat("All requested variables have been located and acquired\n")
+} else {
+  cat("We were unable to find the following variables:\n")
+  print(non_existing)
+}
+
+
+# REDUCE DF TO JUST THE REQUESTED VARIABLES 
+
+MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_ALLVAR[, c(ABCD_VARS)]
+
+# ENSURE MISSINGNESS IS THE SAME ACROSS ALL VARIABLES
+
+MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
+  mutate(
+    across(everything(), ~ifelse(. %in% c(999, 777, ""), NA, .)))
+
+
+### REDUCE THE SITE TO A NUMERIC CHARACTER 
+
+MERGED_ALLTIME_SPECVAR$site_id_l <- sub("site", "", MERGED_ALLTIME_SPECVAR$site_id_l)
+
+```
+```{R, NEUROIMAGING QC}
+
+#####################  NEUROIMAGING QUALITY CONTROL
+
+# Initialize a list to store subIDs affected by NA conditions for each modality
+qc_na_subids <- list(
+  resting_state = character(),
+  nback = character(),
+  dmri = character()
+)
+
+# Resting State
+if (any(grepl("^rsfmri_", colnames(MERGED_ALLTIME_SPECVAR)))) {
+  # Identify subIDs where imgincl_rsfmri_include != 1 before applying NA
+  affected_rows <- MERGED_ALLTIME_SPECVAR$imgincl_rsfmri_include != 1 & !is.na(MERGED_ALLTIME_SPECVAR$imgincl_rsfmri_include)
+  qc_na_subids$resting_state <- MERGED_ALLTIME_SPECVAR$src_subject_id[affected_rows]
+  
+  # Apply NA to rsfmri_ columns
+  MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
+    mutate(across(
+      starts_with("rsfmri_"),
+      ~case_when(
+        imgincl_rsfmri_include != 1 ~ NA_real_,
+        TRUE ~ .
+      )
+    ))
+}
+
+# NBACK
+if (any(grepl("^tfmri_", colnames(MERGED_ALLTIME_SPECVAR)))) {
+  # Identify subIDs where imgincl_nback_include != 1 before applying NA
+  affected_rows <- MERGED_ALLTIME_SPECVAR$imgincl_nback_include != 1 & !is.na(MERGED_ALLTIME_SPECVAR$imgincl_nback_include)
+  qc_na_subids$nback <- MERGED_ALLTIME_SPECVAR$src_subject_id[affected_rows]
+  
+  # Apply NA to tfmri_ columns
+  MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
+    mutate(across(
+      starts_with("tfmri_"),
+      ~case_when(
+        imgincl_nback_include != 1 ~ NA_real_,
+        TRUE ~ .
+      )
+    ))
+}
+
+# dMRI
+if (any(grepl("^mri_y_dti_|^mri_y_rsi_", colnames(MERGED_ALLTIME_SPECVAR)))) {
+  # Identify subIDs where imgincl_dmri_include != 1 before applying NA
+  affected_rows <- MERGED_ALLTIME_SPECVAR$imgincl_dmri_include != 1 & !is.na(MERGED_ALLTIME_SPECVAR$imgincl_dmri_include)
+  qc_na_subids$dmri <- MERGED_ALLTIME_SPECVAR$src_subject_id[affected_rows]
+  
+  # Apply NA to mri_y_dti_ or mri_y_rsi_ columns (assuming these are the intended targets)
+  MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
+    mutate(across(
+      matches("^mri_y_dti_|^mri_y_rsi_"),
+      ~case_when(
+        imgincl_dmri_include != 1 ~ NA_real_,
+        TRUE ~ .
+      )
+    ))
+}
+
+# Print QC summary
+cat("Quality Control - SubIDs with NA applied:\n")
+cat("----------------------------------------\n")
+
+# Resting State
+cat("Resting State (rsfmri_):\n")
+if (length(qc_na_subids$resting_state) > 0) {
+  cat(paste(qc_na_subids$resting_state, collapse = ", "), "\n")
+} else {
+  cat("none\n")
+}
+
+# NBACK
+cat("NBACK (tfmri_):\n")
+if (length(qc_na_subids$nback) > 0) {
+  cat(paste(qc_na_subids$nback, collapse = ", "), "\n")
+} else {
+  cat("none\n")
+}
+
+# dMRI
+cat("dMRI (mri_y_dti_ or mri_y_rsi_):\n")
+if (length(qc_na_subids$dmri) > 0) {
+  cat(paste(qc_na_subids$dmri, collapse = ", "), "\n")
+} else {
+  cat("none\n")
+}
+
+### DROP IMAGING QC VARIABLE, IF NECESSARY 
+
+MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>% select(-matches("^imgincl_|^[tr]fmri_.*meanmotion$|^mri_info_deviceserialnumber$"))
+
+```
+
+
+```{R, RENAME VARIABLES}
+
+#####################  RENAME VARIABLES 
+
+
+### CHANGE THE NAMES TO BE REDUCED AND MATCH CENTER CONVENTIONS
+
+
+## CREATE NAMING DICTIONARY 
+name_mapping <- setNames(NAME_DIC$G.CDS_NAME, NAME_DIC$OG_NAME)
+
+#RENAME BASED ON MATCHING IN THE DICTIONARY 
+names(MERGED_ALLTIME_SPECVAR) <- ifelse(names(MERGED_ALLTIME_SPECVAR) %in% names(name_mapping), 
+                                        name_mapping[names(MERGED_ALLTIME_SPECVAR)], names(MERGED_ALLTIME_SPECVAR))
+
+```
+
+
+```{r, SUBSET WAVES}
+
+#####################  SUBSET INTO WAVES 
+
+dat1 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "baseline_year_1_arm_1")
+dat2 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "6_month_follow_up_arm_1")
+dat3 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "1_year_follow_up_y_arm_1")
+dat4 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "18_month_follow_up_arm_1")
+dat5 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "2_year_follow_up_y_arm_1")
+dat6 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "30_month_follow_up_arm_1")
+dat7 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "3_year_follow_up_y_arm_1")
+dat8 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "42_month_follow_up_arm_1")
+dat9 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "4_year_follow_up_y_arm_1")
+
+
+##################### REMOVE SPECIFIED COLUMNS
+
+# List of all dataframes
+all_dats <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9)
+
+# REMOVE 'eventname' FROM ALL DFS
+all_dats <- lapply(all_dats, function(df) {
+  dplyr::select(df, -"eventname")
+})
+
+# LIST VARIABLES TO REMOVE FROM dat2-dat9 (BUT RETAIN IN dat1)
+vars_to_remove <- c("ppensity", "FamilyID", "Y_RACE", 
+                    "SiteID", "PriEdu", "SecEdu", "PRI_REL")
+
+# REMOVE THE VARIABLES FROM dat2-dat9 ONLY 
+all_dats[2:9] <- lapply(all_dats[2:9], function(df) {
+  dplyr::select(df, -any_of(vars_to_remove))
+})
+
+# Assign back to individual objects
+dat1 <- all_dats[[1]]
+dat2 <- all_dats[[2]]
+dat3 <- all_dats[[3]]
+dat4 <- all_dats[[4]]
+dat5 <- all_dats[[5]]
+dat6 <- all_dats[[6]]
+dat7 <- all_dats[[7]]
+dat8 <- all_dats[[8]]
+dat9 <- all_dats[[9]]
+
+##################### RENAME VARIABLES WITH WAVE NUMBER
+
+# Variables to exclude from renaming
+no_wave_vars <- c("subID", "SiteID", "Gen_LATF", "Soc_LATF", "Pnat_LATF", 
+                  "ppensity", "Y_RACE", "PriEdu", "SecEdu", "FamilyID", 
+                  "Y_SEX", "PRI_REL", "scanID")
+
+# Rename variables in each wave with underscore and wave number, skipping excluded ones
+all_dats <- lapply(seq_along(all_dats), function(i) {
+  wave_num <- i  # Wave 1 for dat1, Wave 2 for dat2, etc.
+  df <- all_dats[[i]]
+  dplyr::rename_with(df, 
+                     ~ paste0(., "_", wave_num),  # Append underscore and wave number
+                     .cols = !any_of(no_wave_vars))  # Only rename columns NOT in no_wave_vars
+})
+
+# Assign back to individual objects
+dat1 <- all_dats[[1]]
+dat2 <- all_dats[[2]]
+dat3 <- all_dats[[3]]
+dat4 <- all_dats[[4]]
+dat5 <- all_dats[[5]]
+dat6 <- all_dats[[6]]
+dat7 <- all_dats[[7]]
+dat8 <- all_dats[[8]]
+dat9 <- all_dats[[9]]
+
+#####################   REMOVE EMPTY COLUMNS FROM EACH WAVE 
+
+dat1 <- janitor::remove_empty(dat1, which = "cols")
+dat2 <- janitor::remove_empty(dat2, which = "cols")
+dat3 <- janitor::remove_empty(dat3, which = "cols")
+dat4 <- janitor::remove_empty(dat4, which = "cols")
+dat5 <- janitor::remove_empty(dat5, which = "cols")
+dat6 <- janitor::remove_empty(dat6, which = "cols")
+dat7 <- janitor::remove_empty(dat7, which = "cols")
+dat8 <- janitor::remove_empty(dat8, which = "cols")
+dat9 <- janitor::remove_empty(dat9, which = "cols")
+
+
+#################### LIST ONLY THE DFS THAT HAVE DATA OF INTEREST IN THEM 
+
+# Recreate all_dats with final dataframes
+
+ALL_WAVES <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9)
+
+# Debug: Print column counts before filtering
+cat("\nColumn Counts Before Filtering:\n")
+cat("--------------------------------\n")
+col_counts <- sapply(ALL_WAVES, ncol)
+for (i in 1:length(col_counts)) {
+  cat(sprintf("dat%d: %d columns\n", i, col_counts[i]))
+}
+
+# Filter to keep only dataframes with 3 or more columns
+VALID_WAVES <- ALL_WAVES[col_counts >= 3]
+
+# Print which dataframes were kept
+cat("\nDataframes with 3 or more columns (for merging):\n")
+cat("----------------------------------------------\n")
+kept_indices <- which(col_counts >= 3)
+kept_names <- paste0("dat", kept_indices)
+cat(paste(kept_names, collapse = ", "), "\n")
+
+```
+
+```{R, JOIN WAVE DATA}
+
+##################### MERGE ALL VALID WAVES
+
+# Start with the first dataframe
+ALL_WAVES <- VALID_WAVES[[1]]
+
+# Full join all subsequent dataframes by src_subject_id
+if (length(VALID_WAVES) > 1) {
+  for (i in 2:length(VALID_WAVES)) {
+    ALL_WAVES <- dplyr::full_join(ALL_WAVES, VALID_WAVES[[i]], by = "subID")
+  }
+}
+
+##################### REMOVE DUPLICATE IDs
+
+ALL_WAVES_CLEAN <- ALL_WAVES %>% dplyr::distinct(subID, .keep_all = TRUE)
+
+##################### PRINT SUMMARY
+
+cat("Summary of Merged Waves:\n")
+cat("-----------------------\n")
+cat("Valid Waves Merged:", paste(names(VALID_WAVES), collapse = ", "), "\n")
+cat("Rows in ALL_WAVES (before deduplication):", nrow(ALL_WAVES), "\n")
+cat("Rows in ALL_WAVES_CLEAN (after deduplication):", nrow(ALL_WAVES_CLEAN), "\n")
+cat("Columns in ALL_WAVES_CLEAN:", ncol(ALL_WAVES_CLEAN), "\n")
+cat("Unique IDs in ALL_WAVES_CLEAN:", length(unique(ALL_WAVES_CLEAN$subID)), "\n")
+
+```
+
+```{R, REORDER AND QC CHECK}
+
+##################### REORDER VARIABLES TO BE WITH LIKE VARIABLES
+
+# Define participant identifiers in desired order
+id_vars <- c("subID", "FamilyID", "SiteID", "ppensity", "scanID", "Y_RACE", 
+             "PriEdu", "SecEdu", "Y_SEX", "PRI_REL", "Gen_LATF", "Soc_LATF", "Pnat_LATF")
+
+# Get all column names
+all_names <- names(ALL_WAVES_CLEAN)
+
+# Extract identifiers present in the dataframe, in specified order
+id_names <- intersect(id_vars, all_names)
+
+# Extract variable keys by removing wave designator (_ followed by digits) for non-identifiers
+var_key <- sapply(all_names[!all_names %in% id_vars], function(name) {
+  gsub("_[0-9]+$", "", name)
+})
+
+# Get unique keys for clustering
+unique_key <- unique(var_key)
+
+# Sort unique keys alphabetically for consistent ordering
+unique_key_sorted <- sort(unique_key)
+
+# Create sorted list of clustered names (excluding identifiers)
+clustered_names <- unlist(lapply(unique_key_sorted, function(key) {
+  matches <- grep(paste0("^", key, "(_[0-9]+)?$"), all_names[!all_names %in% id_vars], value = TRUE)
+  sort(matches)
+}))
+
+# Combine identifiers first, then clustered names
+sorted_names <- c(id_names, clustered_names)
+
+# Reorder the dataframe
+ALL_WAVES_CLEAN_REORDER <- ALL_WAVES_CLEAN[, sorted_names, drop = FALSE]
+
+##################### PRINT SUMMARY
+
+cat("Reordering Summary:\n")
+cat("------------------\n")
+cat("Columns in ALL_WAVES_CLEAN (original):", ncol(ALL_WAVES_CLEAN), "\n")
+cat("Columns in ALL_WAVES_CLEAN_REORDER (reordered):", ncol(ALL_WAVES_CLEAN_REORDER), "\n")
+if (ncol(ALL_WAVES_CLEAN) != ncol(ALL_WAVES_CLEAN_REORDER)) {
+  cat("Warning: Column counts differ! Check for dropped or duplicated columns.\n")
+}
+cat("\nReordered Column Names:\n")
+cat("----------------------\n")
+print(names(ALL_WAVES_CLEAN_REORDER))
+
+##################### ENSURE NO DUPLICATE VARIABLES (UNLESS THEY MAKE SENSE)
+
+### CREATE A FUNCTION TO LOCATE IDENTICAL COLUMNS 
+
+WhoDis <- function(df) {
+  # Get the column names
+  col_names <- names(df)
+  
+  # Initialize a list to store pairs of identical columns
+  identical_pairs <- list()
+  
+  # Loop through each pair of columns
+  for (i in 1:(ncol(df) - 1)) {
+    for (j in (i + 1):ncol(df)) {
+      # Check if the columns are identical
+      if (identical(df[[i]], df[[j]])) {
+        identical_pairs <- c(identical_pairs, list(c(col_names[i], col_names[j])))
+      }
+    }
+  }
+  
+  # Return the list of identical column pairs
+  return(identical_pairs)
+}
+
+## APPLY THE FUNCTION
+Same_Columns <- WhoDis(ALL_WAVES_CLEAN_REORDER)
+
+
+# PRINT RESULT
+print(Same_Columns)
+
+```
+```{r, SAVE DATA}
+
+#################  MAKE A CODEBOOK 
+
+CODEBOOK <- NAME_DIC %>% 
+  dplyr::filter(OG_NAME %in% ABCD_VARS)
+
+################# SAVE DATA 
+
+write.csv(ALL_WAVES_CLEAN_REORDER, "UNPREDICTABILITY_KATIE_4.11.25.csv", row.names=FALSE, na="")
+
+write.csv(CODEBOOK, "CODEBOOK_UNPREDICTABILITY_KATIE_4.11.25.csv", row.names=FALSE, na="")
+
+
+################# PREP AN MPLUS FORMAT DATASET 
+
+#library(MplusAutomation)
+#prepareMplusData(ALL_WAVES_CLEAN_REORDER,"UNPREDICTABILITY_KATIE_4.11.25.dat")
+
+```
+
+
+
