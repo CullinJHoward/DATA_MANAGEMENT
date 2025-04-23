@@ -226,12 +226,13 @@ MERGED_ALLTIME_SPECVAR$site_id_l <- sub("site", "", MERGED_ALLTIME_SPECVAR$site_
 ```
 ```{R, NEUROIMAGING QC}
 
-#####################  NEUROIMAGING QUALITY CONTROL
+##################### NEUROIMAGING QUALITY CONTROL
 
 # Initialize a list to store subIDs affected by NA conditions for each modality
 qc_na_subids <- list(
   resting_state = character(),
   nback = character(),
+  mid = character(),
   dmri = character()
 )
 
@@ -253,17 +254,34 @@ if (any(grepl("^rsfmri_", colnames(MERGED_ALLTIME_SPECVAR)))) {
 }
 
 # NBACK
-if (any(grepl("^tfmri_", colnames(MERGED_ALLTIME_SPECVAR)))) {
+if (any(grepl("^tfmri_nb", colnames(MERGED_ALLTIME_SPECVAR)))) {
   # Identify subIDs where imgincl_nback_include != 1 before applying NA
   affected_rows <- MERGED_ALLTIME_SPECVAR$imgincl_nback_include != 1 & !is.na(MERGED_ALLTIME_SPECVAR$imgincl_nback_include)
   qc_na_subids$nback <- MERGED_ALLTIME_SPECVAR$src_subject_id[affected_rows]
   
-  # Apply NA to tfmri_ columns
+  # Apply NA to tfmri_nb columns
   MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
     mutate(across(
-      starts_with("tfmri_"),
+      starts_with("tfmri_nb"),
       ~case_when(
         imgincl_nback_include != 1 ~ NA_real_,
+        TRUE ~ .
+      )
+    ))
+}
+
+# MID
+if (any(grepl("^tfmri_ma", colnames(MERGED_ALLTIME_SPECVAR)))) {
+  # Identify subIDs where imgincl_mid_include != 1 before applying NA
+  affected_rows <- MERGED_ALLTIME_SPECVAR$imgincl_mid_include != 1 & !is.na(MERGED_ALLTIME_SPECVAR$imgincl_mid_include)
+  qc_na_subids$mid <- MERGED_ALLTIME_SPECVAR$src_subject_id[affected_rows]
+  
+  # Apply NA to tfmri_ma columns
+  MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
+    mutate(across(
+      starts_with("tfmri_ma"),
+      ~case_when(
+        imgincl_mid_include != 1 ~ NA_real_,
         TRUE ~ .
       )
     ))
@@ -275,7 +293,7 @@ if (any(grepl("^mri_y_dti_|^mri_y_rsi_", colnames(MERGED_ALLTIME_SPECVAR)))) {
   affected_rows <- MERGED_ALLTIME_SPECVAR$imgincl_dmri_include != 1 & !is.na(MERGED_ALLTIME_SPECVAR$imgincl_dmri_include)
   qc_na_subids$dmri <- MERGED_ALLTIME_SPECVAR$src_subject_id[affected_rows]
   
-  # Apply NA to mri_y_dti_ or mri_y_rsi_ columns (assuming these are the intended targets)
+  # Apply NA to mri_y_dti_ or mri_y_rsi_ columns
   MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
     mutate(across(
       matches("^mri_y_dti_|^mri_y_rsi_"),
@@ -299,9 +317,17 @@ if (length(qc_na_subids$resting_state) > 0) {
 }
 
 # NBACK
-cat("NBACK (tfmri_):\n")
+cat("NBACK (tfmri_nb):\n")
 if (length(qc_na_subids$nback) > 0) {
   cat(paste(qc_na_subids$nback, collapse = ", "), "\n")
+} else {
+  cat("none\n")
+}
+
+# MID
+cat("MID (tfmri_ma):\n")
+if (length(qc_na_subids$mid) > 0) {
+  cat(paste(qc_na_subids$mid, collapse = ", "), "\n")
 } else {
   cat("none\n")
 }
@@ -315,8 +341,8 @@ if (length(qc_na_subids$dmri) > 0) {
 }
 
 ### DROP IMAGING QC VARIABLE, IF NECESSARY 
-
-MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>% select(-matches("^imgincl_|^[tr]fmri_.*meanmotion$|^mri_info_deviceserialnumber$"))
+MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>% 
+  select(-matches("^imgincl_|^[tr]fmri_.*meanmotion$|^mri_info_deviceserialnumber$"))
 
 ```
 
@@ -423,6 +449,17 @@ dat7 <- janitor::remove_empty(dat7, which = "cols")
 dat8 <- janitor::remove_empty(dat8, which = "cols")
 dat9 <- janitor::remove_empty(dat9, which = "cols")
 
+#################### REMOVE DUPLICATE IDS WITHIN WAVES
+
+dat1 <- dat1 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat2 <- dat2 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat3 <- dat3 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat4 <- dat4 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat5 <- dat5 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat6 <- dat6 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat7 <- dat7 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat8 <- dat8 %>% dplyr::distinct(subID, .keep_all = TRUE)
+dat9 <- dat9 %>% dplyr::distinct(subID, .keep_all = TRUE)
 
 #################### LIST ONLY THE DFS THAT HAVE DATA OF INTEREST IN THEM 
 
@@ -565,6 +602,10 @@ print(Same_Columns)
 ```
 ```{r, SAVE DATA}
 
+################# GIVE IT A FILENAME 
+
+FILENAME <- "ABCD_MORRIGHAN_4.23.25"
+
 #################  MAKE A CODEBOOK 
 
 CODEBOOK <- NAME_DIC %>% 
@@ -572,10 +613,9 @@ CODEBOOK <- NAME_DIC %>%
 
 ################# SAVE DATA 
 
-write.csv(ALL_WAVES_CLEAN_REORDER, "UNPREDICTABILITY_KATIE_4.11.25.csv", row.names=FALSE, na="")
+write.csv(ALL_WAVES_CLEAN_REORDER, paste0(FILENAME, ".csv"), row.names=FALSE, na="")
 
-write.csv(CODEBOOK, "CODEBOOK_UNPREDICTABILITY_KATIE_4.11.25.csv", row.names=FALSE, na="")
-
+write.csv(CODEBOOK, paste0("CODEBOOK_", FILENAME, ".csv"), row.names=FALSE, na="")
 
 ################# PREP AN MPLUS FORMAT DATASET 
 
