@@ -16,6 +16,7 @@ library(summarytools)
 library(psych)
 library(DescTools)
 library(purrr)
+library(lubridate)
 
 ##################### IDENTIFY DIRETORIES
 
@@ -32,7 +33,7 @@ REQUEST <- read.csv("KH_VAR_REQUEST.csv")
 
 ### INDICATE THE PATH TO OUR SAVED ABCD DATA (PASSWORD-PROTECTED LOCATION)
 
-ABCD_DIRECTORY <- "D:\\ABCD 5.0\\abcd 5.0\\core\\"
+ABCD_DIRECTORY <- "D:\\ABCD 5.0\\abcd 5.0\\"
 
 
 ##################### IDENTIFY ALL THE REQUESTED VARIABLES 
@@ -55,7 +56,8 @@ ABCD_VARS <- unique(c(
   "acs_raked_propensity_score", "race_ethnicity",
   "demo_prnt_marital_v2", "demo_prnt_ed_v2",
   "demo_prtnr_ed_v2", "demo_comb_income_v2",
-  "rel_family_id", "interview_age",
+  "rel_family_id", "interview_age", "interview_date", "socialdev_visit_date", 
+  "socialdev_visit_date_l",
   REQUEST$Variable.Name
 ))
 
@@ -224,6 +226,7 @@ MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
 MERGED_ALLTIME_SPECVAR$site_id_l <- sub("site", "", MERGED_ALLTIME_SPECVAR$site_id_l)
 
 ```
+
 ```{R, NEUROIMAGING QC}
 
 ##################### NEUROIMAGING QUALITY CONTROL
@@ -367,23 +370,66 @@ names(MERGED_ALLTIME_SPECVAR) <- ifelse(names(MERGED_ALLTIME_SPECVAR) %in% names
 
 ```{r, SUBSET WAVES}
 
+###  MAKE INTERVIEW DATE USABLE (now it is year.month, month as percent of year)
+
+# IN CORE STUDIES 
+MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, CORE_VD = {
+  if ("CORE_VD" %in% names(MERGED_ALLTIME_SPECVAR)) {
+    date <- lubridate::mdy(CORE_VD)
+    year <- lubridate::year(date)
+    month <- lubridate::month(date)
+    year + (month - 1) / 12
+  } else {
+    CORE_VD  # Return unchanged if CORE_VD not present
+  }
+})
+
+# IN SOCIAL DEVELOPMENT SUBSTUDY
+## BASELINE VISIT
+MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, SUBS_BVD = {
+  if ("SUBS_BVD" %in% names(MERGED_ALLTIME_SPECVAR)) {
+    date <- lubridate::ymd_hm(SUBS_BVD)
+    year <- lubridate::year(date)
+    month <- lubridate::month(date)
+    year + (month - 1) / 12
+  } else {
+    SUBS_BVD  # Return unchanged if SUBS_BVD not present
+  }
+})
+
+## FOLLOW-UP VISITS
+MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, SUBS_FVD = {
+  if ("SUBS_FVD" %in% names(MERGED_ALLTIME_SPECVAR)) {
+    date <- lubridate::ymd_hm(SUBS_FVD)
+    year <- lubridate::year(date)
+    month <- lubridate::month(date)
+    year + (month - 1) / 12
+  } else {
+    SUBS_FVD  # Return unchanged if SUBS_BVD not present
+  }
+})
+
 #####################  SUBSET INTO WAVES 
 
-dat1 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "baseline_year_1_arm_1")
-dat2 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "6_month_follow_up_arm_1")
-dat3 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "1_year_follow_up_y_arm_1")
-dat4 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "18_month_follow_up_arm_1")
-dat5 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "2_year_follow_up_y_arm_1")
-dat6 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "30_month_follow_up_arm_1")
-dat7 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "3_year_follow_up_y_arm_1")
-dat8 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "42_month_follow_up_arm_1")
-dat9 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "4_year_follow_up_y_arm_1")
+dat1 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "baseline_year_1_arm_1") # (2017.815)
+dat2 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "6_month_follow_up_arm_1") # (2018.291)
+dat3 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "1_year_follow_up_y_arm_1") # (2018.822)
+dat4 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "18_month_follow_up_arm_1") # (2019.291)
+dat5 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "2_year_follow_up_y_arm_1") # (2019.917) 
+dat6 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "30_month_follow_up_arm_1") # (2020.265)
+dat7 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "3_year_follow_up_y_arm_1") # (2020.776)
+dat8 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "42_month_follow_up_arm_1") # (2021.137)
+dat9 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "4_year_follow_up_y_arm_1") # (2021.503)
+
+SD5 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "sd_wave1_arm_3") # (2019.772) Wave 5-ish
+SD7 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "sd_wave2_arm_3") # (2020.674) Wave 7-ish
+SD9 <- subset(MERGED_ALLTIME_SPECVAR, eventname == "sd_wave3_arm_3") # (2021.496) Wave 9-ish
 
 
 ##################### REMOVE SPECIFIED COLUMNS
 
 # List of all dataframes
-all_dats <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9)
+all_dats <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9, SD5, SD7, SD9)[sapply(list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9, SD5, SD7, SD9), function(x) nrow(x) > 0)]
 
 # REMOVE 'eventname' FROM ALL DFS
 all_dats <- lapply(all_dats, function(df) {
@@ -394,21 +440,21 @@ all_dats <- lapply(all_dats, function(df) {
 vars_to_remove <- c("ppensity", "FamilyID", "Y_RACE", 
                     "SiteID", "PriEdu", "SecEdu", "PRI_REL")
 
-# REMOVE THE VARIABLES FROM dat2-dat9 ONLY 
-all_dats[2:9] <- lapply(all_dats[2:9], function(df) {
-  dplyr::select(df, -any_of(vars_to_remove))
-})
 
-# Assign back to individual objects
-dat1 <- all_dats[[1]]
-dat2 <- all_dats[[2]]
-dat3 <- all_dats[[3]]
-dat4 <- all_dats[[4]]
-dat5 <- all_dats[[5]]
-dat6 <- all_dats[[6]]
-dat7 <- all_dats[[7]]
-dat8 <- all_dats[[8]]
-dat9 <- all_dats[[9]]
+# REMOVE THE VARIABLES FROM ALL DFS EXCEPT THE FIRST 
+if (length(all_dats) > 1) {
+  all_dats[-1] <- lapply(all_dats[-1], function(df) {
+    dplyr::select(df, -any_of(vars_to_remove))
+  })
+}
+
+# Dynamically assign back to individual objects based on available data frames
+df_names <- c("dat1", "dat2", "dat3", "dat4", "dat5", "dat6", "dat7", "dat8", "dat9", "SD5", "SD7", "SD9")
+for (i in seq_along(all_dats)) {
+  if (i <= length(df_names)) {
+    assign(df_names[i], all_dats[[i]], envir = .GlobalEnv)
+  }
+}
 
 ##################### RENAME VARIABLES WITH WAVE NUMBER
 
@@ -417,25 +463,24 @@ no_wave_vars <- c("subID", "SiteID", "Gen_LATF", "Soc_LATF", "Pnat_LATF",
                   "ppensity", "Y_RACE", "PriEdu", "SecEdu", "FamilyID", 
                   "Y_SEX", "PRI_REL", "scanID")
 
-# Rename variables in each wave with underscore and wave number, skipping excluded ones
-all_dats <- lapply(seq_along(all_dats), function(i) {
-  wave_num <- i  # Wave 1 for dat1, Wave 2 for dat2, etc.
-  df <- all_dats[[i]]
-  dplyr::rename_with(df, 
-                     ~ paste0(., "_", wave_num),  # Append underscore and wave number
-                     .cols = !any_of(no_wave_vars))  # Only rename columns NOT in no_wave_vars
-})
+# Define wave number suffixes for each data frame
+wave_map <- c(dat1=1, dat2=2, dat3=3, dat4=4, dat5=5, dat6=6, dat7=7, dat8=8, dat9=9, SD5=5, SD7=7, SD9=9)
 
-# Assign back to individual objects
-dat1 <- all_dats[[1]]
-dat2 <- all_dats[[2]]
-dat3 <- all_dats[[3]]
-dat4 <- all_dats[[4]]
-dat5 <- all_dats[[5]]
-dat6 <- all_dats[[6]]
-dat7 <- all_dats[[7]]
-dat8 <- all_dats[[8]]
-dat9 <- all_dats[[9]]
+# List of data frames to process (only those that exist and have rows)
+df_names <- c("dat1", "dat2", "dat3", "dat4", "dat5", "dat6", "dat7", "dat8", "dat9", "SD5", "SD7", "SD9")
+
+# Rename variables for each data frame
+for (df_name in df_names) {
+  # Check if data frame exists and has rows
+  if (exists(df_name, envir = .GlobalEnv) && nrow(get(df_name, envir = .GlobalEnv)) > 0) {
+    wave_num <- wave_map[df_name]  # Get wave number from mapping
+    df <- get(df_name, envir = .GlobalEnv)  # Get the data frame
+    df <- dplyr::rename_with(df, 
+                             ~ paste0(., "_", wave_num),  # Append _ and wave number
+                             .cols = !any_of(no_wave_vars))  # Exclude no_wave_vars
+    assign(df_name, df, envir = .GlobalEnv)  # Assign back to original name
+  }
+}
 
 #####################   REMOVE EMPTY COLUMNS FROM EACH WAVE 
 
@@ -448,6 +493,9 @@ dat6 <- janitor::remove_empty(dat6, which = "cols")
 dat7 <- janitor::remove_empty(dat7, which = "cols")
 dat8 <- janitor::remove_empty(dat8, which = "cols")
 dat9 <- janitor::remove_empty(dat9, which = "cols")
+SD5 <- janitor::remove_empty(SD5, which = "cols")
+SD7 <- janitor::remove_empty(SD7, which = "cols")
+SD9 <- janitor::remove_empty(SD9, which = "cols")
 
 #################### REMOVE DUPLICATE IDS WITHIN WAVES
 
@@ -460,12 +508,15 @@ dat6 <- dat6 %>% dplyr::distinct(subID, .keep_all = TRUE)
 dat7 <- dat7 %>% dplyr::distinct(subID, .keep_all = TRUE)
 dat8 <- dat8 %>% dplyr::distinct(subID, .keep_all = TRUE)
 dat9 <- dat9 %>% dplyr::distinct(subID, .keep_all = TRUE)
+SD5 <- SD5 %>% dplyr::distinct(subID, .keep_all = TRUE)
+SD7 <- SD7 %>% dplyr::distinct(subID, .keep_all = TRUE)
+SD9 <- SD9 %>% dplyr::distinct(subID, .keep_all = TRUE)
 
 #################### LIST ONLY THE DFS THAT HAVE DATA OF INTEREST IN THEM 
 
 # Recreate all_dats with final dataframes
 
-ALL_WAVES <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9)
+ALL_WAVES <- list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9, SD5, SD7, SD9)[sapply(list(dat1, dat2, dat3, dat4, dat5, dat6, dat7, dat8, dat9, SD5, SD7, SD9), function(x) nrow(x) > 0)]
 
 # Debug: Print column counts before filtering
 cat("\nColumn Counts Before Filtering:\n")
@@ -484,6 +535,7 @@ cat("----------------------------------------------\n")
 kept_indices <- which(col_counts >= 3)
 kept_names <- paste0("dat", kept_indices)
 cat(paste(kept_names, collapse = ", "), "\n")
+
 
 ```
 
