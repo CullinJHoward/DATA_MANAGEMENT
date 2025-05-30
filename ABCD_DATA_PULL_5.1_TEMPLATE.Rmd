@@ -56,8 +56,8 @@ ABCD_VARS <- unique(c(
   "acs_raked_propensity_score", "race_ethnicity",
   "demo_prnt_marital_v2", "demo_prnt_ed_v2",
   "demo_prtnr_ed_v2", "demo_comb_income_v2",
-  "rel_family_id", "interview_age", "interview_date", "socialdev_visit_date", 
-  "socialdev_visit_date_l",
+  "rel_family_id", "interview_age", "interview_date",  
+  # "socialdev_visit_date_l","socialdev_visit_date", # ONLY IF USING SOCIAL DEVELOPMENT SUBSTUDY
   REQUEST$Variable.Name
 ))
 
@@ -218,7 +218,12 @@ MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_ALLVAR[, c(ABCD_VARS)]
 
 MERGED_ALLTIME_SPECVAR <- MERGED_ALLTIME_SPECVAR %>%
   mutate(
-    across(everything(), ~ifelse(. %in% c(999, 777, ""), NA, .)))
+    across(everything(), ~case_when(
+      cur_column() == "rel_family_id" ~ .,
+      . %in% c(999, 777, "") ~ NA,
+      TRUE ~ .
+    ))
+  )
 
 
 ### REDUCE THE SITE TO A NUMERIC CHARACTER 
@@ -386,28 +391,26 @@ MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, CORE_VD = {
 
 # IN SOCIAL DEVELOPMENT SUBSTUDY
 ## BASELINE VISIT
-MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, SUBS_BVD = {
-  if ("SUBS_BVD" %in% names(MERGED_ALLTIME_SPECVAR)) {
+
+if ("SUBS_BVD" %in% names(MERGED_ALLTIME_SPECVAR) && as.numeric(MERGED_ALLTIME_SPECVAR$SUBS_BVD[1]) %% 2 == 0) {
+  MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, SUBS_BVD = {
     date <- lubridate::ymd_hm(SUBS_BVD)
     year <- lubridate::year(date)
     month <- lubridate::month(date)
     year + (month - 1) / 12
-  } else {
-    SUBS_BVD  # Return unchanged if SUBS_BVD not present
-  }
-})
+  })
+}
 
 ## FOLLOW-UP VISITS
-MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, SUBS_FVD = {
-  if ("SUBS_FVD" %in% names(MERGED_ALLTIME_SPECVAR)) {
+
+if ("SUBS_FVD" %in% names(MERGED_ALLTIME_SPECVAR) && as.numeric(MERGED_ALLTIME_SPECVAR$SUBS_FVD[1]) %% 2 == 0) {
+  MERGED_ALLTIME_SPECVAR <- dplyr::mutate(MERGED_ALLTIME_SPECVAR, SUBS_FVD = {
     date <- lubridate::ymd_hm(SUBS_FVD)
     year <- lubridate::year(date)
     month <- lubridate::month(date)
     year + (month - 1) / 12
-  } else {
-    SUBS_FVD  # Return unchanged if SUBS_BVD not present
-  }
-})
+  })
+}
 
 #####################  SUBSET INTO WAVES 
 
@@ -499,18 +502,55 @@ SD9 <- janitor::remove_empty(SD9, which = "cols")
 
 #################### REMOVE DUPLICATE IDS WITHIN WAVES
 
-dat1 <- dat1 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat2 <- dat2 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat3 <- dat3 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat4 <- dat4 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat5 <- dat5 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat6 <- dat6 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat7 <- dat7 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat8 <- dat8 %>% dplyr::distinct(subID, .keep_all = TRUE)
-dat9 <- dat9 %>% dplyr::distinct(subID, .keep_all = TRUE)
-SD5 <- SD5 %>% dplyr::distinct(subID, .keep_all = TRUE)
-SD7 <- SD7 %>% dplyr::distinct(subID, .keep_all = TRUE)
-SD9 <- SD9 %>% dplyr::distinct(subID, .keep_all = TRUE)
+# Apply distinct only if subID is present in each dataframe
+if ("subID" %in% names(dat1)) {
+  dat1 <- dat1 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat2)) {
+  dat2 <- dat2 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat3)) {
+  dat3 <- dat3 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat4)) {
+  dat4 <- dat4 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat5)) {
+  dat5 <- dat5 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat6)) {
+  dat6 <- dat6 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat7)) {
+  dat7 <- dat7 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat8)) {
+  dat8 <- dat8 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(dat9)) {
+  dat9 <- dat9 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(SD5)) {
+  SD5 <- SD5 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(SD7)) {
+  SD7 <- SD7 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
+if ("subID" %in% names(SD9)) {
+  SD9 <- SD9 %>% dplyr::distinct(subID, .keep_all = TRUE)
+}
+
 
 #################### LIST ONLY THE DFS THAT HAVE DATA OF INTEREST IN THEM 
 
