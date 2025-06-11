@@ -33,7 +33,7 @@ REQUEST <- read.csv("KH_VAR_REQUEST.csv")
 
 ### INDICATE THE PATH TO OUR SAVED ABCD DATA (PASSWORD-PROTECTED LOCATION)
 
-ABCD_DIRECTORY <- "D:\\ABCD 5.0\\abcd 5.0\\"
+ABCD_DIRECTORY <- "D:\\ABCD 5.0\\ABCD_5.0\\"
 
 
 ##################### IDENTIFY ALL THE REQUESTED VARIABLES 
@@ -68,7 +68,8 @@ ABCD_VARS <- unique(c(
 
 if (any(grepl("^mri_", csv_files))) {
   # Add mri_y_qc_incl.csv and mri_y_qc_motion.csv to csv_files if present
-  csv_files <- c(csv_files, "mri_y_qc_incl.csv", "mri_y_qc_motion.csv", "mri_y_adm_info.csv")
+  csv_files <- c(csv_files, "mri_y_qc_incl.csv", "mri_y_qc_motion.csv", "mri_y_adm_info.csv",
+                 "mri_y_qc_clfind.csv")
 }
 
 ### BASED ON IMAGING MODALITY (BY VARIABLE SUFFIX), 
@@ -77,45 +78,52 @@ if (any(grepl("^mri_", csv_files))) {
 #Resting state QC
 if (any(grepl("^rsfmri_", ABCD_VARS))) {
   # Add imgincl_rsfmri_include and rsfmri_meanmotion to ABCD_VARS if present
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_rsfmri_include", "rsfmri_meanmotion", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_rsfmri_include", "rsfmri_meanmotion", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 #dMRI (DTI or RSI)
 if (any(grepl("^mri_y_dti_|^mri_y_rsi_", csv_files))) {
   # Add imgincl_dmri_include and dmri_meanmotion to ABCD_VARS if present
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_dmri_include", "dmri_meanmotion", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_dmri_include", "dmri_meanmotion", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 #Functional Task - MID 
 if (any(grepl("^mri_y_tfmr_mid_", csv_files))) {
   # Add imgincl_mid_include and tfmri_mid_all_meanmotion to ABCD_VARS if present
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_mid_include", "tfmri_mid_all_meanmotion", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_mid_include", "tfmri_mid_all_meanmotion", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 #Functional Task - NBACK 
 if (any(grepl("^mri_y_tfmr_nback_", csv_files))) {
   # Add imgincl_nback_include and tfmri_sst_all_meanmotion to ABCD_VARS if present
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_nback_include", "tfmri_nback_all_meanmotion", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_nback_include", "tfmri_nback_all_meanmotion", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 #Functional Task - SST 
 if (any(grepl("^mri_y_tfmr_sst_", csv_files))) {
   # Add imgincl_sst_include and tfmri_nback_all_meanmotion to ABCD_VARS if present
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_sst_include", "tfmri_sst_all_meanmotion", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_sst_include", "tfmri_sst_all_meanmotion", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 #Structural - T1 weighted
 
 if (any(grepl("^mri_y_smr_t1_", csv_files))) {
   # Add imgincl_t1w_include 
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_t1w_include", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_t1w_include", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 #Structural - T2 weighted
 
 if (any(grepl("^mri_y_smr_t2_", csv_files))) {
   # Add imgincl_t2w_include 
-  ABCD_VARS <- c(ABCD_VARS, "imgincl_t2w_include", "mri_info_deviceserialnumber")
+  ABCD_VARS <- c(ABCD_VARS, "imgincl_t2w_include", "mri_info_deviceserialnumber",
+                 "mrif_score", "mri_info_manufacturer", "mri_info_manufacturersmn")
 }
 
 
@@ -566,13 +574,13 @@ for (i in 1:length(col_counts)) {
   cat(sprintf("dat%d: %d columns\n", i, col_counts[i]))
 }
 
-# Filter to keep only dataframes with 3 or more columns
-VALID_WAVES <- ALL_WAVES[col_counts >= 3]
+# Filter to keep only dataframes with 4 or more columns
+VALID_WAVES <- ALL_WAVES[col_counts >= 4]
 
 # Print which dataframes were kept
-cat("\nDataframes with 3 or more columns (for merging):\n")
+cat("\nDataframes with 4 or more columns (for merging):\n")
 cat("----------------------------------------------\n")
-kept_indices <- which(col_counts >= 3)
+kept_indices <- which(col_counts >= 4)
 kept_names <- paste0("dat", kept_indices)
 cat(paste(kept_names, collapse = ", "), "\n")
 
